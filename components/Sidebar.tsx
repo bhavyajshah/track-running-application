@@ -12,7 +12,7 @@ import { X, User, Settings, Trophy, Target, ChartBar as BarChart3, CircleHelp as
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import AnimatedButton from '@/components/AnimatedButton';
+import AnimatedButton from './AnimatedButton';
 import Animated, {
   useAnimatedStyle,
   withSpring,
@@ -31,7 +31,7 @@ interface SidebarProps {
 export default function Sidebar({ visible, onClose, translateX, opacity }: SidebarProps) {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const menuItems = [
     {
@@ -107,28 +107,44 @@ export default function Sidebar({ visible, onClose, translateX, opacity }: Sideb
   return (
     <View style={styles.container}>
       {/* Overlay */}
-      <Animated.View style={[styles.overlay, animatedOverlayStyle]}>
+      <Animated.View style={[
+        styles.overlay,
+        animatedOverlayStyle,
+        { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.4)' }
+      ]}>
         <TouchableOpacity style={styles.overlayTouchable} onPress={onClose} />
       </Animated.View>
 
       {/* Sidebar */}
       <Animated.View style={[styles.sidebar, animatedSidebarStyle]}>
-        <BlurView intensity={100} style={[styles.blurContainer, { backgroundColor: theme.colors.surface + 'F0' }]}>
+        <View style={[
+          styles.blurContainer,
+          {
+            backgroundColor: theme.colors.surface,
+            borderRightWidth: isDark ? 1 : 0,
+            borderRightColor: isDark ? theme.colors.border : 'transparent',
+          }
+        ]}>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
             <AnimatedButton onPress={onClose} style={styles.closeButton} hapticType="light">
               <X size={24} color={theme.colors.textSecondary} />
             </AnimatedButton>
           </View>
 
           {/* User Info */}
-          <View style={styles.userSection}>
+          <View style={[styles.userSection, { borderBottomColor: theme.colors.border }]}>
             <Image
               source={{ uri: user?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=240&h=240&dpr=2' }}
-              style={styles.avatar}
+              style={[styles.avatar, { borderColor: theme.colors.primary }]}
             />
             <Text style={[styles.userName, { color: theme.colors.text }]}>{user?.full_name || 'User'}</Text>
             <Text style={[styles.userEmail, { color: theme.colors.textSecondary }]}>{user?.email || 'user@example.com'}</Text>
+            <View style={[styles.userBadge, { backgroundColor: theme.colors.primary + '20' }]}>
+              <Text style={[styles.userBadgeText, { color: theme.colors.primary }]}>
+                {user?.fitness_level || 'Beginner'} Runner
+              </Text>
+            </View>
           </View>
 
           {/* Menu Items */}
@@ -138,8 +154,17 @@ export default function Sidebar({ visible, onClose, translateX, opacity }: Sideb
               return (
                 <AnimatedButton
                   key={item.id}
-                  style={styles.menuItem}
+                  style={[
+                    styles.menuItem,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+                      borderRadius: 12,
+                      marginHorizontal: 12,
+                      marginVertical: 2,
+                    }
+                  ]}
                   onPress={() => handleItemPress(item)}
+                  hapticType="light"
                 >
                   <View style={[styles.menuIcon, { backgroundColor: `${item.color}20` }]}>
                     <IconComponent size={20} color={item.color} />
@@ -151,13 +176,24 @@ export default function Sidebar({ visible, onClose, translateX, opacity }: Sideb
           </View>
 
           {/* Sign Out */}
-          <View style={styles.footerSection}>
-            <AnimatedButton style={[styles.signOutButton, { backgroundColor: theme.colors.error + '20' }]} onPress={handleSignOut} hapticType="warning">
+          <View style={[styles.footerSection, { borderTopColor: theme.colors.border }]}>
+            <AnimatedButton
+              style={[
+                styles.signOutButton,
+                {
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FECACA'
+                }
+              ]}
+              onPress={handleSignOut}
+              hapticType="warning"
+            >
               <LogOut size={20} color="#EF4444" />
               <Text style={styles.signOutText}>Sign Out</Text>
             </AnimatedButton>
           </View>
-        </BlurView>
+        </View>
       </Animated.View>
     </View>
   );
@@ -174,7 +210,6 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   overlayTouchable: {
     flex: 1,
@@ -189,6 +224,14 @@ const styles = StyleSheet.create({
   },
   blurContainer: {
     flex: 1,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 2,
+      height: 0,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 16,
   },
   header: {
     flexDirection: 'row',
@@ -197,23 +240,24 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 20,
+    borderBottomWidth: 1,
   },
   closeButton: {
     padding: 8,
+    borderRadius: 20,
   },
   userSection: {
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingVertical: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    marginHorizontal: 20,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
     marginBottom: 16,
+    borderWidth: 3,
   },
   userName: {
     fontSize: 20,
@@ -223,10 +267,21 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
+    marginBottom: 12,
+  },
+  userBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  userBadgeText: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
   },
   menuSection: {
     flex: 1,
-    paddingTop: 20,
+    paddingTop: 24,
+    gap: 4,
   },
   menuItem: {
     flexDirection: 'row',
@@ -248,7 +303,9 @@ const styles = StyleSheet.create({
   },
   footerSection: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingBottom: 32,
+    paddingTop: 16,
+    borderTopWidth: 1,
   },
   signOutButton: {
     flexDirection: 'row',
@@ -257,6 +314,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 12,
     gap: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   signOutText: {
     fontSize: 16,

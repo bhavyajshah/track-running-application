@@ -29,13 +29,12 @@ interface AuthContextType {
   user: UserProfile | null;
   session: Session | null;
   isLoading: boolean;
-  isOnboarded: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
-  completeOnboarding: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateUser: (updates: Partial<UserProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -52,7 +51,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isOnboarded, setIsOnboarded] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const router = useRouter();
   const segments = useSegments();
@@ -68,13 +66,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (event, session) => {
         console.log('🔐 Auth state changed:', event);
         setSession(session);
-        
+
         if (session?.user) {
           await loadUserProfile(session.user);
         } else {
           setUser(null);
         }
-        
+
         setIsLoading(false);
       }
     );
@@ -85,61 +83,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Handle navigation
   useEffect(() => {
     if (!initialized || isLoading) return;
-    
+
     const inAuth = segments[0] === 'auth';
-    const inOnboarding = segments[0] === 'onboarding';
     const inTabs = segments[0] === '(tabs)';
     const inValidAppRoute = [
       'activeRun',
-      'settings', 
+      'settings',
       'achievements',
       'goals',
       'runDetails'
     ].includes(segments[0] || '');
 
-    console.log('🧭 Navigation check:', { 
+    console.log('🧭 Navigation check:', {
       currentSegment: segments[0],
       hasSession: !!session,
-      isOnboarded, 
       inAuth,
-      inOnboarding,
       inTabs,
       inValidAppRoute
     });
 
     // Navigation logic
-    if (!isOnboarded && !inOnboarding) {
-      console.log('📍 Redirecting to onboarding');
-      router.replace('/onboarding');
-    } else if (isOnboarded && !session && !inAuth) {
+    if (!session && !inAuth) {
       console.log('📍 Redirecting to auth');
       router.replace('/auth');
-    } else if (isOnboarded && session && inAuth) {
+    } else if (session && inAuth) {
       // Only redirect from auth to tabs when authenticated
       console.log('📍 Redirecting to main app');
       router.replace('/(tabs)');
     }
-  }, [initialized, isLoading, isOnboarded, session, segments]);
+  }, [initialized, isLoading, session, segments]);
 
   const initializeAuth = async () => {
     console.log('🚀 Initializing auth...');
-    
+
     try {
-      // Check onboarding status
-      const onboardingComplete = await storage.getItem('onboarding_complete');
-      setIsOnboarded(!!onboardingComplete);
-      console.log('✅ Onboarding status:', !!onboardingComplete);
-      
       // Get current session
       const { data: { session } } = await supabase.auth.getSession();
       console.log('✅ Session check:', !!session);
-      
+
       setSession(session);
-      
+
       if (session?.user) {
         await loadUserProfile(session.user);
       }
-      
+
     } catch (error) {
       console.error('❌ Auth init error:', error);
     } finally {
@@ -152,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUserProfile = async (authUser: SupabaseUser) => {
     try {
       console.log('👤 Loading profile for:', authUser.id);
-      
+
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -231,7 +218,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         };
         setUser(profileWithPreferences);
-        setUser(profile);
         console.log('✅ Profile created');
       }
     } catch (error) {
@@ -257,17 +243,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, fullName: string) => {
     setIsLoading(true);
-        // Ensure preferences exist
-        const profileWithPreferences = {
-          ...profile,
-          preferences: profile.preferences || {
-            notifications: true,
-            privacy: true,
-            push_notifications: false,
-            email_notifications: false,
-          }
-        };
-        setUser(profileWithPreferences);
     try {
       const { error } = await supabase.auth.signUp({
         email,
@@ -297,12 +272,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const completeOnboarding = async () => {
-    await storage.setItem('onboarding_complete', 'true');
-    setIsOnboarded(true);
-    console.log('✅ Onboarding completed');
-  };
-
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!user) return;
 
@@ -315,7 +284,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error) throw error;
-      setUser(updatedProfile);
+
+      const profileWithPreferences = {
+        ...updatedProfile,
+        preferences: updatedProfile.preferences || user.preferences || {
+          notifications: true,
+          privacy: true,
+          push_notifications: false,
+          email_notifications: false,
+        }
+      };
+
+      setUser(profileWithPreferences);
     } catch (error) {
       console.error('❌ Error updating profile:', error);
       throw error;
@@ -327,19 +307,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await loadUserProfile(session.user);
   };
 
+  // Helper function to update user with proper preferences
+  const updateUser = (updates: Partial<UserProfile>) => {
+    if (!user) return;
+
+    const updatedUser = {
+      ...user,
+      ...updates,
+      preferences: {
+        ...user.preferences,
+        ...updates.preferences,
+      }
+    };
+    setUser(updatedUser);
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
         session,
         isLoading,
-        isOnboarded,
         signIn,
         signUp,
         signOut,
-        completeOnboarding,
         updateProfile,
         refreshProfile,
+        updateUser,
       }}
     >
       {children}

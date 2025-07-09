@@ -20,6 +20,7 @@ import AnimatedButton from '@/components/AnimatedButton';
 import AnimatedCard from '@/components/AnimatedCard';
 import CountUpNumber from '@/components/CountUpNumber';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import SkeletonLoader from '@/components/SkeletonLoader';
 
 interface UserStats {
   totalRuns: number;
@@ -101,15 +102,15 @@ export default function ProfileScreen() {
         const totalDistance = runs.reduce((sum, run) => sum + (run.distance || 0), 0);
         const totalCalories = runs.reduce((sum, run) => sum + (run.calories || 0), 0);
         const longestRun = Math.max(...runs.map(run => run.distance || 0));
-        
+
         // Calculate average pace
-        const avgPaceSeconds = runs.length > 0 ? 
+        const avgPaceSeconds = runs.length > 0 ?
           runs.reduce((sum, run) => {
             const paceStr = (run.pace || '0:00').replace(' min/km', '');
             const [min, sec] = paceStr.split(':').map(Number);
             return sum + (min * 60 + sec);
           }, 0) / runs.length : 0;
-        
+
         const avgPaceMinutes = Math.floor(avgPaceSeconds / 60);
         const avgPaceSecondsRemainder = Math.floor(avgPaceSeconds % 60);
         const avgPace = `${avgPaceMinutes}:${avgPaceSecondsRemainder.toString().padStart(2, '0')}`;
@@ -173,9 +174,9 @@ export default function ProfileScreen() {
       'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Sign Out', 
-          style: 'destructive', 
+        {
+          text: 'Sign Out',
+          style: 'destructive',
           onPress: () => signOut()
         }
       ]
@@ -212,68 +213,67 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-          <SafeAreaView style={styles.safeArea}>
-            {/* Skeleton Header */}
-            <LinearGradient
-              colors={['#8B5CF6', '#A855F7', '#C084FC']}
-              style={styles.skeletonHeader}
-            >
-              <View style={styles.header}>
-                <SkeletonLoader width={100} height={24} borderRadius={4} />
-                <SkeletonLoader width={32} height={32} borderRadius={16} />
+        <SafeAreaView style={styles.safeArea}>
+          {/* Skeleton Header */}
+          <LinearGradient
+            colors={['#8B5CF6', '#A855F7', '#C084FC']}
+            style={styles.skeletonHeader}
+          >
+            <View style={styles.header}>
+              <SkeletonLoader width={100} height={24} borderRadius={4} />
+              <SkeletonLoader width={32} height={32} borderRadius={16} />
+            </View>
+          </LinearGradient>
+
+          {/* Skeleton Content */}
+          <ScrollView style={[styles.content, { backgroundColor: theme.colors.background }]}>
+            {/* Profile Card Skeleton */}
+            <View style={[styles.skeletonCard, { backgroundColor: theme.colors.surface }]}>
+              <SkeletonLoader width={100} height={100} borderRadius={50} style={{ alignSelf: 'center', marginBottom: 16 }} />
+              <SkeletonLoader width={150} height={24} borderRadius={4} style={{ alignSelf: 'center', marginBottom: 8 }} />
+              <SkeletonLoader width={200} height={16} borderRadius={4} style={{ alignSelf: 'center', marginBottom: 16 }} />
+              <View style={styles.skeletonBadges}>
+                <SkeletonLoader width={80} height={24} borderRadius={12} />
+                <SkeletonLoader width={120} height={24} borderRadius={12} />
               </View>
-            </LinearGradient>
-            
-            {/* Skeleton Content */}
-            <ScrollView style={[styles.content, { backgroundColor: theme.colors.background }]}>
-              {/* Profile Card Skeleton */}
-              <View style={[styles.skeletonCard, { backgroundColor: theme.colors.surface }]}>
-                <SkeletonLoader width={100} height={100} borderRadius={50} style={{ alignSelf: 'center', marginBottom: 16 }} />
-                <SkeletonLoader width={150} height={24} borderRadius={4} style={{ alignSelf: 'center', marginBottom: 8 }} />
-                <SkeletonLoader width={200} height={16} borderRadius={4} style={{ alignSelf: 'center', marginBottom: 16 }} />
-                <View style={styles.skeletonBadges}>
-                  <SkeletonLoader width={80} height={24} borderRadius={12} />
-                  <SkeletonLoader width={120} height={24} borderRadius={12} />
-                </View>
-              </View>
-              
-              {/* Stats Card Skeleton */}
-              <View style={[styles.skeletonCard, { backgroundColor: theme.colors.surface }]}>
-                <SkeletonLoader width={150} height={20} borderRadius={4} style={{ marginBottom: 16 }} />
-                <View style={styles.skeletonStatsGrid}>
-                  {[...Array(4)].map((_, index) => (
-                    <View key={index} style={styles.skeletonStatItem}>
-                      <SkeletonLoader width={40} height={40} borderRadius={20} style={{ marginBottom: 8 }} />
-                      <SkeletonLoader width={60} height={16} borderRadius={4} style={{ marginBottom: 4 }} />
-                      <SkeletonLoader width={80} height={12} borderRadius={4} />
-                    </View>
-                  ))}
-                </View>
-              </View>
-              
-              {/* Menu Items Skeleton */}
-              <View style={styles.skeletonMenuSection}>
-                {[...Array(3)].map((_, index) => (
-                  <View key={index} style={[styles.skeletonMenuItem, { backgroundColor: theme.colors.surface }]}>
-                    <SkeletonLoader width={40} height={40} borderRadius={20} />
-                    <View style={styles.skeletonMenuText}>
-                      <SkeletonLoader width={120} height={16} borderRadius={4} style={{ marginBottom: 4 }} />
-                      <SkeletonLoader width={180} height={12} borderRadius={4} />
-                    </View>
-                    <SkeletonLoader width={20} height={20} borderRadius={4} />
+            </View>
+
+            {/* Stats Card Skeleton */}
+            <View style={[styles.skeletonCard, { backgroundColor: theme.colors.surface }]}>
+              <SkeletonLoader width={150} height={20} borderRadius={4} style={{ marginBottom: 16 }} />
+              <View style={styles.skeletonStatsGrid}>
+                {[...Array(4)].map((_, index) => (
+                  <View key={index} style={styles.skeletonStatItem}>
+                    <SkeletonLoader width={40} height={40} borderRadius={20} style={{ marginBottom: 8 }} />
+                    <SkeletonLoader width={60} height={16} borderRadius={4} style={{ marginBottom: 4 }} />
+                    <SkeletonLoader width={80} height={12} borderRadius={4} />
                   </View>
                 ))}
               </View>
-              
-              <View style={styles.loadingSpinnerContainer}>
-                <LoadingSpinner size={32} />
-                <Text style={[styles.loadingText, { color: theme.colors.text }]}>
-                  Loading profile...
-                </Text>
-              </View>
-            </ScrollView>
             </View>
-          </SafeAreaView>
+
+            {/* Menu Items Skeleton */}
+            <View style={styles.skeletonMenuSection}>
+              {[...Array(3)].map((_, index) => (
+                <View key={index} style={[styles.skeletonMenuItem, { backgroundColor: theme.colors.surface }]}>
+                  <SkeletonLoader width={40} height={40} borderRadius={20} />
+                  <View style={styles.skeletonMenuText}>
+                    <SkeletonLoader width={120} height={16} borderRadius={4} style={{ marginBottom: 4 }} />
+                    <SkeletonLoader width={180} height={12} borderRadius={4} />
+                  </View>
+                  <SkeletonLoader width={20} height={20} borderRadius={4} />
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.loadingSpinnerContainer}>
+              <LoadingSpinner size={32} />
+              <Text style={[styles.loadingText, { color: theme.colors.text }]}>
+                Loading profile...
+              </Text>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
       </View>
     );
   }
@@ -294,12 +294,12 @@ export default function ProfileScreen() {
           </View>
 
           {/* Content */}
-          <ScrollView 
+          <ScrollView
             style={styles.content}
             showsVerticalScrollIndicator={false}
             refreshControl={
-              <RefreshControl 
-                refreshing={refreshing} 
+              <RefreshControl
+                refreshing={refreshing}
                 onRefresh={onRefresh}
                 tintColor={theme.colors.primary}
                 colors={[theme.colors.primary]}
@@ -310,8 +310,8 @@ export default function ProfileScreen() {
             <AnimatedCard delay={200}>
               <View style={[styles.profileCard, { backgroundColor: theme.colors.surface }]}>
                 <Image
-                  source={{ 
-                    uri: user?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2' 
+                  source={{
+                    uri: user?.avatar_url || 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=200&h=200&dpr=2'
                   }}
                   style={styles.avatar}
                 />
@@ -347,8 +347,8 @@ export default function ProfileScreen() {
                     <View style={[styles.statIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
                       <MapPin size={20} color="#8B5CF6" />
                     </View>
-                    <CountUpNumber 
-                      value={userStats.totalDistance} 
+                    <CountUpNumber
+                      value={userStats.totalDistance}
                       decimals={1}
                       style={[styles.statValue, { color: theme.colors.text }]}
                       delay={600}
@@ -361,8 +361,8 @@ export default function ProfileScreen() {
                     <View style={[styles.statIcon, { backgroundColor: '#10B981' + '20' }]}>
                       <Calendar size={20} color="#10B981" />
                     </View>
-                    <CountUpNumber 
-                      value={userStats.totalRuns} 
+                    <CountUpNumber
+                      value={userStats.totalRuns}
                       style={[styles.statValue, { color: theme.colors.text }]}
                       delay={700}
                     />
@@ -374,8 +374,8 @@ export default function ProfileScreen() {
                     <View style={[styles.statIcon, { backgroundColor: '#F59E0B' + '20' }]}>
                       <Flame size={20} color="#F59E0B" />
                     </View>
-                    <CountUpNumber 
-                      value={userStats.totalCalories} 
+                    <CountUpNumber
+                      value={userStats.totalCalories}
                       style={[styles.statValue, { color: theme.colors.text }]}
                       delay={800}
                     />

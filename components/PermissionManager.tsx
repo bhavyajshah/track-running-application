@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { MapPin, Bell } from 'lucide-react-native';
 import * as Location from 'expo-location';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/contexts/ThemeContext';
 import AnimatedButton from '@/components/AnimatedButton';
 
@@ -24,7 +26,7 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
     {
       id: 'location',
       name: 'Location',
-      description: 'Required for GPS tracking during runs',
+      description: 'Required for GPS tracking during runs. This allows us to calculate distance, pace, and map your route accurately.',
       icon: MapPin,
       status: 'undetermined',
       required: true,
@@ -38,8 +40,8 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
   const checkPermissions = async () => {
     const updatedPermissions = await Promise.all(
       permissions.map(async (permission) => {
-        let status: 'granted' | 'denied' | 'undetermined' = 'undetermined';
-        
+        let status: 'granted' | 'denied' | 'undetermined' = permission.status;
+
         try {
           switch (permission.id) {
             case 'location':
@@ -48,8 +50,10 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
                 status = navigator.geolocation ? 'undetermined' : 'denied';
               } else {
                 const locationStatus = await Location.getForegroundPermissionsAsync();
-                status = locationStatus.granted ? 'granted' : 
-                        locationStatus.canAskAgain ? 'undetermined' : 'denied';
+                status = locationStatus.granted ? 'granted' :
+                  locationStatus.canAskAgain ? 'undetermined' : 'denied';
+                console.log('📍 Location permission status:', status);
+                console.log('📍 Location permission status:', status);
               }
               break;
           }
@@ -62,11 +66,13 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
     );
 
     setPermissions(updatedPermissions);
-    
+
     // Check if all required permissions are granted
     const requiredPermissions = updatedPermissions.filter(p => p.required);
-    const allRequiredGranted = requiredPermissions.every(p => p.status === 'granted');
-    
+    const allRequiredGranted = requiredPermissions.length > 0 &&
+      requiredPermissions.every(p => p.status === 'granted');
+    requiredPermissions.every(p => p.status === 'granted');
+
     if (allRequiredGranted && onPermissionsComplete) {
       const permissionMap = updatedPermissions.reduce((acc, p) => {
         acc[p.id] = p.status === 'granted';
@@ -85,9 +91,11 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
           if (Platform.OS === 'web') {
             // For web, try to get current position to trigger permission request
             try {
-              await new Promise((resolve, reject) => {
+              await new Promise<GeolocationPosition>((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
-                  timeout: 5000,
+                  timeout: 15000,
+                  enableHighAccuracy: true,
+                  enableHighAccuracy: true,
                 });
               });
               result = { granted: true };
@@ -101,8 +109,8 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
       }
 
       if (result) {
-        setPermissions(prev => prev.map(p => 
-          p.id === permissionId 
+        setPermissions(prev => prev.map(p =>
+          p.id === permissionId
             ? { ...p, status: result.granted ? 'granted' : 'denied' }
             : p
         ));
@@ -112,12 +120,12 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
           Alert.alert(
             'Permission Required',
             `${permission?.name} permission is needed for the app to function properly. You can enable it in Settings.`,
-            Platform.OS === 'web' 
+            Platform.OS === 'web'
               ? [{ text: 'OK', style: 'default' }]
               : [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Settings', onPress: () => {} }
-                ]
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Settings', onPress: () => { } }
+              ]
           );
         } else {
           checkPermissions(); // Recheck all permissions
@@ -146,91 +154,121 @@ export default function PermissionManager({ onPermissionsComplete }: PermissionM
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
-      <Text style={[styles.title, { color: theme.colors.text }]}>Location Permission</Text>
-      <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-        Location access is required for GPS tracking during your runs
-      </Text>
+    <View style={styles.modalOverlay}>
+      <LinearGradient
+        colors={['#8B5CF6', '#A855F7', '#C084FC']}
+        style={styles.gradientHeader}
+      >
+        <SafeAreaView>
+          <Text style={styles.headerTitle}>Location Access</Text>
+          <Text style={styles.headerSubtitle}>
+            Enable location services to track your runs
+          </Text>
+        </SafeAreaView>
+      </LinearGradient>
 
-      {permissions.map((permission) => {
-        const IconComponent = permission.icon;
-        return (
-          <View key={permission.id} style={[styles.permissionItem, { borderColor: theme.colors.border }]}>
-            <View style={styles.permissionIcon}>
-              <IconComponent size={24} color={theme.colors.primary} />
-            </View>
-            
-            <View style={styles.permissionContent}>
-              <View style={styles.permissionHeader}>
-                <Text style={[styles.permissionName, { color: theme.colors.text }]}>
-                  {permission.name}
-                  {permission.required && <Text style={[styles.required, { color: '#EF4444' }]}> *</Text>}
-                </Text>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(permission.status) + '20' }]}>
-                  <Text style={[styles.statusText, { color: getStatusColor(permission.status) }]}>
-                    {getStatusText(permission.status)}
-                  </Text>
-                </View>
+      <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
+
+        {permissions.map((permission) => {
+          const IconComponent = permission.icon;
+          return (
+            <View key={permission.id} style={[styles.permissionItem, { borderColor: theme.colors.border }]}>
+              <View style={styles.permissionIcon}>
+                <IconComponent size={24} color={theme.colors.primary} />
               </View>
-              
-              <Text style={[styles.permissionDescription, { color: theme.colors.textSecondary }]}>
-                {permission.description}
-              </Text>
-              
-              {permission.status !== 'granted' && (
-                <AnimatedButton
-                  style={[styles.requestButton, { backgroundColor: theme.colors.primary }]}
-                  onPress={() => requestPermission(permission.id)}
-                  hapticType="medium"
-                >
-                  <Text style={styles.requestButtonText}>
-                    {permission.status === 'denied' ? 'Enable in Settings' : 'Grant Permission'}
-                  </Text>
-                </AnimatedButton>
-              )}
-            </View>
-          </View>
-        );
-      })}
 
-      <View style={styles.footer}>
-        <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
-          Location permission is required for GPS tracking and distance calculation during your runs
-        </Text>
+              <View style={styles.permissionContent}>
+                <View style={styles.permissionHeader}>
+                  <Text style={[styles.permissionName, { color: theme.colors.text }]}>
+                    {permission.name}
+                    {permission.required && <Text style={[styles.required, { color: '#EF4444' }]}> *</Text>}
+                  </Text>
+
+                  {permission.status === 'denied' && (
+                    <View style={[styles.warningBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+                      <Text style={[styles.warningText, { color: '#EF4444' }]}>
+                        Location permission was denied. Please enable it in your device settings to use run tracking.
+                      </Text>
+                    </View>
+                  )}
+
+                  {permission.status === 'denied' && (
+                    <View style={[styles.warningBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+                      <Text style={[styles.warningText, { color: '#EF4444' }]}>
+                        Location permission was denied. Please enable it in your device settings to use run tracking.
+                      </Text>
+                    </View>
+                  )}
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(permission.status) + '20' }]}>
+                    <Text style={[styles.statusText, { color: getStatusColor(permission.status) }]}>
+                      {getStatusText(permission.status)}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.permissionDescription, { color: theme.colors.textSecondary }]}>
+                  {permission.description}
+                </Text>
+
+                {permission.status !== 'granted' && (
+                  <AnimatedButton
+                    style={[styles.requestButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={() => requestPermission(permission.id)}
+                    hapticType="medium"
+                  >
+                    <Text style={styles.requestButtonText}>
+                      {permission.status === 'denied' ? 'Enable in Settings' : 'Grant Permission'}
+                    </Text>
+                  </AnimatedButton>
+                )}
+              </View>
+            </View>
+          );
+        })}
+
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
+            Location permission is required for GPS tracking and distance calculation during your runs
+          </Text>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  gradientHeader: {
+    paddingBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
   container: {
     padding: 20,
-    borderRadius: 16,
-    margin: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 20,
-    fontFamily: 'Inter-Bold',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    textAlign: 'center',
-    marginBottom: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -20,
+    flex: 1,
   },
   permissionItem: {
     flexDirection: 'row',
-    padding: 16,
+    padding: 20,
     borderWidth: 1,
     borderRadius: 12,
     marginBottom: 12,
@@ -240,8 +278,8 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 16,
   },
   permissionContent: {
@@ -250,22 +288,23 @@ const styles = StyleSheet.create({
   permissionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 4,
   },
   permissionName: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     flex: 1,
+    marginRight: 12,
   },
   required: {
     fontSize: 16,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter-SemiBold',
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   statusText: {
     fontSize: 12,
@@ -274,19 +313,32 @@ const styles = StyleSheet.create({
   permissionDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    marginBottom: 12,
+    marginTop: 12,
+    marginBottom: 16,
     lineHeight: 20,
   },
   requestButton: {
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
-    alignSelf: 'flex-start',
+    alignItems: 'center',
   },
   requestButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontFamily: 'Inter-SemiBold',
+  },
+  warningBox: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  warningText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    lineHeight: 16,
   },
   footer: {
     marginTop: 16,

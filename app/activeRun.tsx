@@ -1,36 +1,35 @@
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppState } from 'react-native';
-import { ArrowLeft, Pause, Play, Flame, Zap, Square, MapPin, Clock } from 'lucide-react-native';
+import { ArrowLeft, Pause, Play, Flame, Zap, Square, MapPin, Clock, CircleStop as StopCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withDelay,
-  withRepeat,
-  withTiming,
-  interpolate,
 } from 'react-native-reanimated';
 import MapView, { Polyline } from 'react-native-maps';
 import { locationService, LocationData, RunStats } from '@/lib/location';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import AnimatedButton from '@/components/AnimatedButton';
 import BackgroundTracker from '@/components/BackgroundTracker';
 import CountUpNumber from '@/components/CountUpNumber';
+import PermissionManager from '@/components/PermissionManager';
 
 const { width, height } = Dimensions.get('window');
 const AnimatedView = Animated.createAnimatedComponent(View);
-const AnimatedText = Animated.createAnimatedComponent(Text);
 
 export default function ActiveRunScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { theme } = useTheme();
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [locationPermission, setLocationPermission] = useState(false);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [showBackgroundTracker, setShowBackgroundTracker] = useState(false);
   const [appState, setAppState] = useState('active');
   const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -51,10 +50,9 @@ export default function ActiveRunScreen() {
   const startTimeRef = useRef<number | null>(null);
   const pausedTimeRef = useRef<number>(0);
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Animation values
   const statusDotScale = useSharedValue(1);
-  const statsOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
 
   // App state monitoring for background tracking
@@ -62,7 +60,7 @@ export default function ActiveRunScreen() {
     const subscription = AppState.addEventListener('change', nextAppState => {
       console.log('📱 App state changed in ActiveRun:', nextAppState);
       setAppState(nextAppState);
-      
+
       // Show background tracker when app goes to background during active run
       setShowBackgroundTracker(nextAppState !== 'active' && (isRunning || isPaused));
     });
@@ -81,31 +79,23 @@ export default function ActiveRunScreen() {
   }, []);
 
   useEffect(() => {
-    // Animate status dot based on running state
+    // Start duration update interval when running
     if (isRunning) {
-      statusDotScale.value = withRepeat(
-        withTiming(1.2, { duration: 1000 }),
-        -1,
-        true
-      );
-      
-      // Start duration update interval
       updateIntervalRef.current = setInterval(() => {
         if (startTimeRef.current) {
-          const currentDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
+          const pausedMs = pausedTimeRef.current;
+          const currentDuration = Math.floor((Date.now() - startTimeRef.current - pausedMs) / 1000);
           setRunStats(prev => ({ ...prev, duration: currentDuration }));
         }
       }, 1000);
     } else {
-      statusDotScale.value = withTiming(1, { duration: 300 });
-      
-      // Clear duration update interval
+      // Clear duration update interval when not running
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
         updateIntervalRef.current = null;
       }
     }
-    
+
     return () => {
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
@@ -114,32 +104,27 @@ export default function ActiveRunScreen() {
     };
   }, [isRunning]);
 
-  useEffect(() => {
-    // Animate stats visibility
-    statsOpacity.value = withTiming(1, { duration: 800 });
-  }, []);
-
-
   const initializeActiveRun = async () => {
     console.log('🔍 Checking location permission...');
     setInitializing(true);
-    
+
     try {
       // First check if location services are available
       const isAvailable = await locationService.checkPermissionStatus();
       console.log('📍 Location available:', isAvailable);
-      
+
       if (!isAvailable) {
         setPermissionError('Location services not available');
+        setShowPermissionModal(true);
         setInitializing(false);
         return;
       }
-      
+
       // Request permissions
       const hasPermission = await locationService.requestPermissions();
       console.log('🔐 Permission granted:', hasPermission);
       setLocationPermission(hasPermission);
-      
+
       if (hasPermission) {
         // Try to get initial location
         const location = await getInitialLocation();
@@ -150,13 +135,16 @@ export default function ActiveRunScreen() {
           setPermissionError(null);
         } else {
           setPermissionError('Unable to get current location');
+          setShowPermissionModal(true);
         }
       } else {
         setPermissionError('Location permission denied');
+        setShowPermissionModal(true);
       }
     } catch (error) {
       console.error('❌ Location permission error:', error);
       setPermissionError('Failed to access location services');
+      setShowPermissionModal(true);
     } finally {
       setInitializing(false);
     }
@@ -179,13 +167,13 @@ export default function ActiveRunScreen() {
   };
 
   const handleLocationUpdate = (location: LocationData): void => {
-    console.log('📍 Location update received:', location);
+    console.log('📍 Location update received');
     setCurrentLocation(location);
     setRouteCoordinates(prev => [...prev, { latitude: location.latitude, longitude: location.longitude }]);
   };
 
   const handleStatsUpdate = (stats: RunStats): void => {
-    console.log('📊 Stats update received:', stats);
+    console.log('📊 Stats update received');
     setRunStats(stats);
   };
 
@@ -193,13 +181,13 @@ export default function ActiveRunScreen() {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const toggleRunning = async () => {
     if (!locationPermission) {
-      await initializeActiveRun();
+      setShowPermissionModal(true);
       return;
     }
 
@@ -207,7 +195,7 @@ export default function ActiveRunScreen() {
       // Start run
       startTimeRef.current = Date.now();
       pausedTimeRef.current = 0;
-      
+
       console.log('▶️ Starting run tracking...');
       const success = await locationService.startTracking(handleLocationUpdate, handleStatsUpdate);
       if (success) {
@@ -223,29 +211,54 @@ export default function ActiveRunScreen() {
       locationService.pauseTracking();
       setIsRunning(false);
       setIsPaused(true);
-      pausedTimeRef.current += Date.now() - (startTimeRef.current || Date.now());
+
+      // Record the time when paused
+      const currentPausedTime = pausedTimeRef.current;
+      const pauseStartTime = Date.now();
+
+      // Update paused time in an interval
+      const pauseInterval = setInterval(() => {
+        pausedTimeRef.current = currentPausedTime + (Date.now() - pauseStartTime);
+      }, 1000);
+
+      // Store the interval ID to clear it later
+      updateIntervalRef.current = pauseInterval;
+
     } else if (!isRunning && isPaused) {
       // Resume run
       console.log('▶️ Resuming run tracking...');
-      startTimeRef.current = Date.now() - pausedTimeRef.current;
+
+      // Clear the pause interval
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current);
+      }
+
       const success = await locationService.resumeTracking(handleLocationUpdate, handleStatsUpdate);
       if (success) {
         setIsRunning(true);
         setIsPaused(false);
         console.log('✅ Run tracking resumed');
       }
-    } else {
-      // Stop run
-      console.log('⏹️ Stopping run tracking...');
-      locationService.stopTracking();
-      setIsRunning(false);
-      setIsPaused(false);
     }
   };
 
   const handleFinishRun = async () => {
-    if (runStats.duration === 0) {
-      router.back();
+    if (runStats.duration < 5) {
+      Alert.alert(
+        'Cancel Run',
+        'This run is too short to save. Do you want to cancel it?',
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Yes, Cancel',
+            style: 'destructive',
+            onPress: () => {
+              locationService.stopTracking();
+              router.back();
+            }
+          }
+        ]
+      );
       return;
     }
 
@@ -253,26 +266,58 @@ export default function ActiveRunScreen() {
       'Finish Run',
       'Are you sure you want to finish this workout?',
       [
-        { text: 'Continue', style: 'cancel' },
-        { 
-          text: 'Finish', 
-          style: 'destructive', 
+        { text: 'Continue Running', style: 'cancel' },
+        {
+          text: 'Finish & Save',
+          style: 'default',
           onPress: saveRunAndFinish
         }
       ]
     );
   };
 
+  const handleCancelRun = () => {
+    if (isRunning || isPaused) {
+      Alert.alert(
+        'Cancel Run',
+        'Are you sure you want to cancel this run? Your data will be lost.',
+        [
+          { text: 'Continue Running', style: 'cancel' },
+          {
+            text: 'Cancel Run',
+            style: 'destructive',
+            onPress: () => {
+              locationService.stopTracking();
+              router.back();
+            }
+          }
+        ]
+      );
+    } else {
+      router.back();
+    }
+  };
+
   const saveRunAndFinish = async () => {
     console.log('💾 Saving run data...');
     locationService.stopTracking();
-    
+
     try {
       const runData = locationService.getRunData();
       const coordinates = locationService.getCoordinates();
-      
+
       console.log('📊 Final run data:', runData);
-      
+
+      // Only save if we have meaningful data
+      if (runData.distance < 0.01 || runData.duration < 10) {
+        Alert.alert(
+          'Run Too Short',
+          'This run is too short to save. Try running for a longer distance or time.',
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        return;
+      }
+
       // Save run to Supabase
       const dbRunData = {
         user_id: user?.id,
@@ -283,28 +328,37 @@ export default function ActiveRunScreen() {
         max_speed: runData.maxSpeed,
         pace: runData.pace,
         elevation_gain: runData.elevationGain,
-        route_coordinates: coordinates,
+        route_coordinates: coordinates.map(coord => ({
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          timestamp: coord.timestamp
+        })),
         location: currentLocation ? 'Current Location' : 'Unknown',
         weather_data: {},
         start_time: new Date(Date.now() - runData.duration * 1000).toISOString(),
         end_time: new Date().toISOString(),
       };
-      
+
       const { error } = await supabase
         .from('runs')
         .insert([dbRunData]);
-        
+
       if (error) {
         console.error('Error saving run:', error);
         Alert.alert('Error', 'Failed to save run data');
       } else {
         console.log('✅ Run saved successfully');
+        Alert.alert(
+          'Run Saved',
+          `Great job! You completed ${runData.distance.toFixed(2)}km in ${formatTime(runData.duration)}.`,
+          [{ text: 'View History', onPress: () => router.push('/(tabs)/history') }]
+        );
       }
     } catch (error) {
       console.error('Error saving run:', error);
       Alert.alert('Error', 'Failed to save run data');
     }
-    
+
     router.back();
   };
 
@@ -314,59 +368,25 @@ export default function ActiveRunScreen() {
     };
   });
 
-  const statsAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: statsOpacity.value,
-    };
-  });
-
-  const handleLongPressStop = () => {
-    handleFinishRun();
+  const handlePermissionsComplete = (permissions: Record<string, boolean>) => {
+    console.log('🔐 Permissions updated:', permissions);
+    if (permissions.location) {
+      setLocationPermission(true);
+      setShowPermissionModal(false);
+      initializeActiveRun();
+    }
   };
 
-  if (!locationPermission) {
+  if (showPermissionModal) {
     return (
-      <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          {/* Header */}
-          <View style={styles.header}>
-            <AnimatedButton onPress={() => router.back()} hapticType="light">
-              <ArrowLeft color="#111827" size={24} />
-            </AnimatedButton>
-            <Text style={styles.headerTitle}>Active Run</Text>
-            <View style={{ width: 24 }} />
-          </View>
-          
-          <View style={styles.permissionContainer}>
-            {initializing ? (
-              <>
-                <Text style={styles.permissionTitle}>Initializing...</Text>
-                <Text style={styles.permissionDescription}>
-                  Setting up location services for your run.
-                </Text>
-              </>
-            ) : (
-              <>
-            <Text style={styles.permissionTitle}>Location Permission Required</Text>
-            <Text style={styles.permissionDescription}>
-              Location access is needed to track your run accurately and provide distance, pace, and route information.
-            </Text>
-            {permissionError && (
-              <Text style={styles.permissionError}>{permissionError}</Text>
-            )}
-                <TouchableOpacity style={styles.permissionButton} onPress={initializeActiveRun}>
-              <Text style={styles.permissionButtonText}>Grant Permission</Text>
-            </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </SafeAreaView>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <PermissionManager onPermissionsComplete={handlePermissionsComplete} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Background Tracker - Shows when app is minimized */}
       <BackgroundTracker
         isVisible={showBackgroundTracker}
@@ -377,60 +397,62 @@ export default function ActiveRunScreen() {
           pace: runStats.pace,
         }}
       />
-      
+
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
-        <View style={styles.header}>
-          <AnimatedButton onPress={() => router.back()} hapticType="light">
-            <ArrowLeft color="#111827" size={24} />
+        <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
+          <AnimatedButton onPress={handleCancelRun} hapticType="light">
+            <ArrowLeft color={theme.colors.text} size={24} />
           </AnimatedButton>
-          <Text style={styles.headerTitle}>Active Run</Text>
-          <AnimatedButton 
-            onPress={handleLongPressStop}
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Active Run</Text>
+          <AnimatedButton
+            onPress={handleFinishRun}
             hapticType="heavy"
             style={styles.stopButton}
           >
-            <Square color="#EF4444" size={20} />
+            <StopCircle color="#EF4444" size={24} />
           </AnimatedButton>
         </View>
 
         {/* Map */}
-        <View style={styles.mapContainer}>
+        <View style={[styles.mapContainer, { backgroundColor: theme.colors.surface }]}>
           {currentLocation && (
             <MapView
-                style={styles.map}
-                initialRegion={{
-                  latitude: currentLocation.latitude,
-                  longitude: currentLocation.longitude,
-                  latitudeDelta: 0.005,
-                  longitudeDelta: 0.005,
-                }}
-                showsUserLocation={true}
-                showsCompass={false}
-                showsScale={false}
-                zoomEnabled={true}
-                scrollEnabled={true}
-                followsUserLocation={isRunning}
-                userLocationAnnotationTitle=""
-              >
-                {routeCoordinates.length > 1 && (
-                  <Polyline
-                    coordinates={routeCoordinates}
-                    strokeColor="#8B5CF6"
-                    strokeWidth={4}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                )}
-              </MapView>
-            )}
-            
-            {!currentLocation && (
-              <View style={styles.noLocationContainer}>
-                <Text style={styles.noLocationText}>Getting your location...</Text>
-              </View>
-            )}
-          
+              style={styles.map}
+              initialRegion={{
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+              }}
+              showsUserLocation={true}
+              showsCompass={false}
+              showsScale={false}
+              zoomEnabled={true}
+              scrollEnabled={true}
+              followsUserLocation={isRunning}
+              userLocationAnnotationTitle=""
+            >
+              {routeCoordinates.length > 1 && (
+                <Polyline
+                  coordinates={routeCoordinates}
+                  strokeColor={theme.colors.primary}
+                  strokeWidth={4}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              )}
+            </MapView>
+          )}
+
+          {!currentLocation && (
+            <View style={[styles.noLocationContainer, { backgroundColor: theme.colors.background }]}>
+              <Text style={[styles.noLocationText, { color: theme.colors.textSecondary }]}>
+                {initializing ? 'Getting your location...' : 'Location not available'}
+              </Text>
+            </View>
+          )}
+
           {/* Map Overlay Stats */}
           <View style={styles.mapOverlay}>
             <View style={styles.overlayItem}>
@@ -444,62 +466,36 @@ export default function ActiveRunScreen() {
               <Text style={styles.overlayText}>{formatTime(runStats.duration)}</Text>
             </View>
           </View>
-          
-          {/* Real-time Stats Overlay */}
-          <AnimatedView style={[styles.statsOverlay, statsAnimatedStyle]}>
-            <View style={styles.liveStatItem}>
-              <CountUpNumber 
-                value={runStats.distance} 
-                decimals={2}
-                style={styles.liveStatValue}
-                duration={500}
-              />
-              <Text style={styles.liveStatLabel}>km</Text>
-            </View>
-            <View style={styles.liveStatItem}>
-              <CountUpNumber 
-                value={runStats.speed} 
-                decimals={1}
-                style={styles.liveStatValue}
-                duration={500}
-              />
-              <Text style={styles.liveStatLabel}>km/h</Text>
-            </View>
-            <View style={styles.liveStatItem}>
-              <AnimatedText style={styles.liveStatValue}>{runStats.pace}</AnimatedText>
-              <Text style={styles.liveStatLabel}>pace</Text>
-            </View>
-          </AnimatedView>
         </View>
 
         {/* Control Panel */}
-        <View style={styles.controlPanel}>
+        <View style={[styles.controlPanel, { backgroundColor: theme.colors.surface }]}>
           {/* Main Stats */}
           <View style={styles.mainStats}>
             <View style={styles.primaryStat}>
-              <CountUpNumber 
-                value={runStats.distance} 
+              <CountUpNumber
+                value={runStats.distance}
                 decimals={2}
-                style={styles.primaryStatValue}
+                style={[styles.primaryStatValue, { color: theme.colors.text }]}
                 duration={800}
               />
-              <Text style={styles.primaryStatUnit}>km</Text>
-              <Text style={styles.primaryStatLabel}>distance</Text>
+              <Text style={[styles.primaryStatUnit, { color: theme.colors.textSecondary }]}>km</Text>
+              <Text style={[styles.primaryStatLabel, { color: theme.colors.textSecondary }]}>distance</Text>
             </View>
-            
+
             <View style={styles.secondaryStats}>
-              <View style={styles.secondaryStat}>
-                <AnimatedText style={styles.secondaryStatValue}>{runStats.pace}</AnimatedText>
-                <Text style={styles.secondaryStatLabel}>min/km</Text>
+              <View style={[styles.secondaryStat, { backgroundColor: theme.colors.background }]}>
+                <Text style={[styles.secondaryStatValue, { color: theme.colors.text }]}>{runStats.pace}</Text>
+                <Text style={[styles.secondaryStatLabel, { color: theme.colors.textSecondary }]}>min/km</Text>
               </View>
-              <View style={styles.secondaryStat}>
-                <CountUpNumber 
-                  value={runStats.speed} 
+              <View style={[styles.secondaryStat, { backgroundColor: theme.colors.background }]}>
+                <CountUpNumber
+                  value={runStats.speed}
                   decimals={1}
-                  style={styles.secondaryStatValue}
+                  style={[styles.secondaryStatValue, { color: theme.colors.text }]}
                   duration={500}
                 />
-                <Text style={styles.secondaryStatLabel}>km/h</Text>
+                <Text style={[styles.secondaryStatLabel, { color: theme.colors.textSecondary }]}>km/h</Text>
               </View>
             </View>
           </View>
@@ -508,8 +504,8 @@ export default function ActiveRunScreen() {
           <View style={styles.controlButtons}>
             <AnimatedButton
               style={[
-                styles.controlButton, 
-                styles.pausePlayButton, 
+                styles.controlButton,
+                styles.pausePlayButton,
                 isRunning ? styles.pauseButton : isPaused ? styles.resumeButton : styles.playButton
               ]}
               onPress={toggleRunning}
@@ -526,46 +522,46 @@ export default function ActiveRunScreen() {
           {/* Additional Stats */}
           <View style={styles.additionalStats}>
             <View style={styles.statItem}>
-              <View style={styles.statIcon}>
+              <View style={[styles.statIcon, { backgroundColor: '#F97316' + '20' }]}>
                 <Flame color="#F97316" size={16} />
               </View>
-              <CountUpNumber 
-                value={runStats.calories} 
-                style={styles.statValue}
+              <CountUpNumber
+                value={runStats.calories}
+                style={[styles.statValue, { color: theme.colors.text }]}
                 duration={600}
               />
-              <Text style={styles.statUnit}>kcal</Text>
+              <Text style={[styles.statUnit, { color: theme.colors.textSecondary }]}>kcal</Text>
             </View>
 
             <View style={styles.statItem}>
-              <View style={styles.statIcon}>
+              <View style={[styles.statIcon, { backgroundColor: '#EAB308' + '20' }]}>
                 <Zap color="#EAB308" size={16} />
               </View>
-              <CountUpNumber 
-                value={runStats.elevationGain} 
-                style={styles.statValue}
+              <CountUpNumber
+                value={runStats.elevationGain}
+                style={[styles.statValue, { color: theme.colors.text }]}
                 duration={600}
               />
-              <Text style={styles.statUnit}>m elevation</Text>
+              <Text style={[styles.statUnit, { color: theme.colors.textSecondary }]}>m elevation</Text>
             </View>
 
             <View style={styles.statItem}>
-              <View style={styles.statIcon}>
+              <View style={[styles.statIcon, { backgroundColor: '#6366F1' + '20' }]}>
                 <Clock color="#6366F1" size={16} />
               </View>
-              <Text style={styles.statValue}>{formatTime(runStats.duration)}</Text>
-              <Text style={styles.statUnit}>time</Text>
+              <Text style={[styles.statValue, { color: theme.colors.text }]}>{formatTime(runStats.duration)}</Text>
+              <Text style={[styles.statUnit, { color: theme.colors.textSecondary }]}>time</Text>
             </View>
           </View>
 
           {/* Status Indicator */}
           <View style={styles.statusIndicator}>
             <AnimatedView style={[
-              styles.statusDot, 
+              styles.statusDot,
               isRunning ? styles.runningDot : isPaused ? styles.pausedDot : styles.readyDot,
               statusDotAnimatedStyle
             ]} />
-            <Text style={styles.statusText}>
+            <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
               {isRunning ? 'Workout Active' : isPaused ? 'Workout Paused' : 'Ready to Start'}
             </Text>
           </View>
@@ -578,7 +574,6 @@ export default function ActiveRunScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
   safeArea: {
     flex: 1,
@@ -589,7 +584,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -602,14 +596,13 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: '#111827',
   },
   stopButton: {
     padding: 8,
     borderRadius: 8,
   },
   mapContainer: {
-    height: height * 0.5, // Make map bigger - 50% of screen height
+    height: height * 0.35, // Reduced map size for better performance
     margin: 20,
     borderRadius: 20,
     overflow: 'hidden',
@@ -627,15 +620,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   noLocationContainer: {
-    height: height * 0.5,
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
   },
   noLocationText: {
     fontSize: 16,
     fontFamily: 'Inter-Regular',
-    color: '#6B7280',
   },
   mapOverlay: {
     position: 'absolute',
@@ -660,9 +651,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
   },
   controlPanel: {
-    backgroundColor: '#FFFFFF',
+    flex: 1,
     paddingTop: 20,
-    paddingBottom: 40,
     paddingHorizontal: 20,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
@@ -687,18 +677,15 @@ const styles = StyleSheet.create({
   primaryStatValue: {
     fontSize: 48,
     fontFamily: 'Inter-Bold',
-    color: '#111827',
   },
   primaryStatUnit: {
     fontSize: 16,
     fontFamily: 'Inter-Medium',
-    color: '#6B7280',
     marginTop: -8,
   },
   primaryStatLabel: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: '#9CA3AF',
     marginTop: 4,
   },
   secondaryStats: {
@@ -707,19 +694,16 @@ const styles = StyleSheet.create({
   },
   secondaryStat: {
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 16,
   },
   secondaryStatValue: {
     fontSize: 20,
     fontFamily: 'Inter-Bold',
-    color: '#111827',
   },
   secondaryStatLabel: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
-    color: '#6B7280',
     marginTop: 4,
   },
   controlButtons: {
@@ -767,7 +751,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -775,13 +758,11 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 16,
     fontFamily: 'Inter-Bold',
-    color: '#111827',
     marginBottom: 2,
   },
   statUnit: {
     fontSize: 10,
     fontFamily: 'Inter-Regular',
-    color: '#6B7280',
     textAlign: 'center',
   },
   statusIndicator: {
@@ -789,6 +770,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    marginTop: 16,
   },
   statusDot: {
     width: 8,
@@ -807,65 +789,5 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
-    color: '#6B7280',
-  },
-  statsOverlay: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  liveStatItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  liveStatValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    marginBottom: 2,
-  },
-  liveStatLabel: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 10,
-    fontFamily: 'Inter-Regular',
-  },
-  permissionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  permissionTitle: {
-    fontSize: 24,
-    fontFamily: 'Inter-Bold',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  permissionDescription: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
-  },
-  permissionButton: {
-    backgroundColor: '#8B5CF6',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  permissionButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#FFFFFF',
   },
 });
